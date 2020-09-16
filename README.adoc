@@ -1,0 +1,79 @@
+# spring-data-mongodb-localdate
+
+small application to show a problem in Spring Data Mongodb when writing/reading `LocalDate` values because the machine's timezone setting 
+is used to write/read a LocalDate.
+
+From the JavaDoc of `LocalDate`:
+____
+This class does not store or represent a time or time-zone. Instead, it is a description of the date, as used for birthdays. 
+It cannot represent an instant on the time-line without additional information such as an offset or time-zone.
+____
+
+So the value written and read must be the same regardless of any time zone settings
+
+## Prerequesites
+
+The application uses Testcontainers to start a MongoDB instance, so a local docker installation is needed.
+
+## The code
+
+It's a minimal Spring Boot (2.3.3) application with Spring Data Mongo 3.0.3 pulled in.
+
+## The code showing the problem
+
+[source,java]
+----
+@Component
+public class Runner implements CommandLineRunner {
+
+    static private final Logger LOG = LoggerFactory.getLogger(Runner.class);
+
+    private final PersonRepository repository;
+
+    public Runner(PersonRepository repository) {
+        this.repository = repository;
+    }
+
+    @Override
+    public void run(String... args) throws Exception {
+        LOG.info("Now I should run some code…\n");
+
+        Person margaret = new Person();
+        margaret.setId("1");
+        margaret.setName("Margaret Hamilton");
+        margaret.setBirthday(LocalDate.of(1936, 8, 17));
+        LOG.info("This is person 1: " + margaret + '\n');
+
+        LOG.info("Storing person 1 on a machine in Berlin\n");
+        TimeZone.setDefault(TimeZone.getTimeZone("Europe/Berlin"));
+        repository.save(margaret);
+
+        LOG.info("Retrieving person 1 on a machine in Los Angeles");
+        TimeZone.setDefault(TimeZone.getTimeZone("America/Los_Angeles"));
+        Person person1 = repository.findById("1").orElseThrow();
+        LOG.info("This is person 1: " + person1);
+    }
+}
+----
+
+## How to run
+
+[source,shell]
+----
+mvn spring-boot:run
+----
+
+## the wrong result
+
+This is the log output:
+
+----
+2020-09-16 19:52:03.458  INFO 23828 --- : This is person 1: Person{id='1', name='Margaret Hamilton', birthday=1936-08-17}
+
+2020-09-16 19:52:03.458  INFO 23828 --- : Storing person 1 on a machine in Berlin
+
+2020-09-16 19:52:03.696  INFO 23828 --- : Retrieving person 1 on a machine in Los Angeles
+2020-09-16 19:52:03.719  INFO 23828 --- : This is person 1: Person{id='1', name='Margaret Hamilton', birthday=1936-08-16}
+----
+
+When reading with a different time zone setting, the person's birthday has changed from August 17 to August *16*
